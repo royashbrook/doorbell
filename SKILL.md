@@ -90,6 +90,8 @@ node <skill-dir>/scripts/codex-desktop.mjs --label <label> --uninstall-launchd
 
 Run install/uninstall elevated because they write `~/Library/LaunchAgents` and call `launchctl`.
 The installed watcher restarts automatically and keeps rings queued while Codex desktop is down.
+Installation replaces the same label's legacy `com.openai.file-doorbell.*` job; uninstall removes
+both names during the compatibility window.
 Confirm `armed`, `watching`, and the transcript path in `~/.codex/logs/`, then run the after-idle
 proof. Reinstall when the owning task id changes. Use `--once` for a one-ring test and `--probe`
 only to diagnose IPC access. A background-terminal watcher remains a session-scoped fallback.

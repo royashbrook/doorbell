@@ -28,6 +28,8 @@ if (test) {
   ]);
   const expected = '[doorbell] hello\n[doorbell] ring [31m payload';
   if (actual !== expected) fail(`format test failed: ${JSON.stringify(actual)}`);
+  if (launchdJob('test') !== 'com.openai.doorbell.test'
+    || legacyLaunchdJob('test') !== 'com.openai.file-doorbell.test') fail('launchd job name test failed');
   const start = startTurnParams('thread-1', 'message-1', 'hello');
   if (START_TURN_VERSION !== 2
     || start.turnStart?.request?.threadId !== 'thread-1'
@@ -39,7 +41,7 @@ if (test) {
     '{"type":"event_msg","payload":{"type":"task_complete"}}',
   ]);
   if (lifecycle !== false) fail(`lifecycle test failed: ${JSON.stringify(lifecycle)}`);
-  const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'file-doorbell-'));
+  const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'doorbell-'));
   const testTranscript = path.join(testDir, 'transcript.jsonl');
   try {
     fs.writeFileSync(testTranscript, `{"type":"event_msg","payload":{"type":"task_complete"}}\n${'filler\n'.repeat(150_000)}`);
@@ -68,7 +70,7 @@ if (!transcript) fail(`transcript not found for ${threadId}`);
 if (installLaunchd) installDesktopLaunchd({ label, signal, threadId });
 
 process.title = `doorbell:codex-desktop:${label}`;
-if (process.stdout.isTTY) process.stdout.write(`\u001b]0;file doorbell: codex desktop: ${label}\u0007`);
+if (process.stdout.isTTY) process.stdout.write(`\u001b]0;doorbell: codex desktop: ${label}\u0007`);
 
 if (probe) {
   try {
@@ -304,6 +306,7 @@ function startTurnParams(conversationId, clientUserMessageId, text) {
 function installDesktopLaunchd({ label, signal, threadId }) {
   if (process.platform !== 'darwin') fail('--install-launchd requires macOS');
   const job = launchdJob(label);
+  const legacyJob = legacyLaunchdJob(label);
   const agentsDir = path.join(os.homedir(), 'Library', 'LaunchAgents');
   const logDir = path.join(os.homedir(), '.codex', 'logs');
   const plist = path.join(agentsDir, `${job}.plist`);
@@ -316,6 +319,8 @@ function installDesktopLaunchd({ label, signal, threadId }) {
   const bootout = spawnSync('launchctl', ['bootout', domain, plist], { stdio: 'ignore' });
   if (bootout.status === 0) spawnSync('/bin/sleep', ['0.2']);
   runCommand('launchctl', ['bootstrap', domain, plist]);
+  spawnSync('launchctl', ['bootout', `${domain}/${legacyJob}`], { stdio: 'ignore' });
+  fs.rmSync(path.join(agentsDir, `${legacyJob}.plist`), { force: true });
   console.log(`doorbell: installed ${job}`);
   console.log(`doorbell: launchd log ${log}`);
   process.exit(0);
@@ -324,15 +329,20 @@ function installDesktopLaunchd({ label, signal, threadId }) {
 function uninstallDesktopLaunchd(label) {
   if (process.platform !== 'darwin') fail('--uninstall-launchd requires macOS');
   const job = launchdJob(label);
-  const plist = path.join(os.homedir(), 'Library', 'LaunchAgents', `${job}.plist`);
   const domain = `gui/${process.getuid()}`;
-  spawnSync('launchctl', ['bootout', `${domain}/${job}`], { stdio: 'ignore' });
-  fs.rmSync(plist, { force: true });
+  for (const candidate of [job, legacyLaunchdJob(label)]) {
+    spawnSync('launchctl', ['bootout', `${domain}/${candidate}`], { stdio: 'ignore' });
+    fs.rmSync(path.join(os.homedir(), 'Library', 'LaunchAgents', `${candidate}.plist`), { force: true });
+  }
   console.log(`doorbell: uninstalled ${job}`);
   process.exit(0);
 }
 
 function launchdJob(label) {
+  return `com.openai.doorbell.${label}`;
+}
+
+function legacyLaunchdJob(label) {
   return `com.openai.file-doorbell.${label}`;
 }
 

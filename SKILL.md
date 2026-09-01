@@ -20,6 +20,34 @@ not count a live watcher, task, PID, or successful injection call as a working d
 Do not build a transport framework for hypothetical mechanisms. A concrete second transport can
 add its own focused adapter when it exists.
 
+## First-use permission preflight
+
+A long-running task is not reachable until its ordinary receive path can finish without a new
+human permission prompt. On first setup, map the complete path that applies to this integration:
+
+1. Observe the transport and wake the task.
+2. Resolve and read any payload referenced by the ring.
+3. Run any sync or pull required to make that payload current.
+4. Write any delivery offset, receipt, or acknowledgement state.
+5. Inspect, restart, or rearm the adapter when normal recovery requires it.
+
+Exercise every required boundary during setup. Request the host's narrowest reusable or persistent
+approval for each stable command prefix, path, and network destination. The approval should survive
+ordinary idle periods, task resumes, and host restarts until the user revokes it. A one-time or
+session-scoped approval does not pass this preflight. Never request blanket shell, home-directory,
+filesystem, or network access just to avoid future prompts.
+
+The skill cannot grant itself permission. If the host cannot persist a required permission, move
+that action into an already-authorized supervisor when possible. Otherwise state that unattended
+delivery is unsupported and record exactly which action still requires reapproval.
+
+Finish with a cold permission proof: let the task become idle, send a realistic unique ring, open
+and read its referenced payload, and write its normal receipt or state when the integration uses
+one. Passing means the exact ring opens a visible turn and the receive path completes without a new
+human permission prompt. Record the approved scopes and any limitation in the integration's durable
+runbook. Re-run the preflight when the adapter, task identity, paths, host version, or permission
+profile changes.
+
 ## File transport
 
 1. Resolve one existing signal file to an absolute path.
@@ -92,6 +120,10 @@ Run install/uninstall elevated because they write `~/Library/LaunchAgents` and c
 The installed watcher restarts automatically and keeps rings queued while Codex desktop is down.
 Installation replaces the same label's legacy `com.openai.file-doorbell.*` job; uninstall removes
 both names during the compatibility window.
+During first setup, prefer a least-privilege Codex permission profile for the exact external paths
+and network destinations the receive path needs. Approval policy and sandbox access are separate:
+an approved command still cannot cross a filesystem or network boundary that the active profile
+does not allow.
 Confirm `armed`, `watching`, and the transcript path in `~/.codex/logs/`, then run the after-idle
 proof. Reinstall when the owning task id changes. Use `--once` for a one-ring test and `--probe`
 only to diagnose IPC access. A background-terminal watcher remains a session-scoped fallback.

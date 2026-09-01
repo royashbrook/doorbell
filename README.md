@@ -1,4 +1,18 @@
-# Doorbell
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
+    <img src="assets/logo.svg" width="220" alt="doorbell">
+  </picture>
+</p>
+
+<h1 align="center">doorbell</h1>
+
+<p align="center"><em>the ring that becomes a turn.</em></p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/license-MIT-388bfd?style=flat-square" alt="MIT">
+  <img src="https://img.shields.io/badge/hosts-claude%20code%20%C2%B7%20codex%20desktop%20%C2%B7%20grok-388bfd?style=flat-square" alt="hosts">
+</p>
 
 A cross-substrate coding-agent skill that turns local rings into visible agent turns.
 

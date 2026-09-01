@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 240" role="img" aria-label="doorbell">
+  <title>doorbell</title>
+  <desc>A doorbell wall plate with its button mid-press, ring waves waking the room.</desc>
+  <!-- wall plate -->
+  <rect x="118" y="58" width="84" height="124" rx="18" fill="none" stroke="#e6edf3" stroke-width="8"/>
+  <!-- mounting screws -->
+  <circle cx="160" cy="78" r="4" fill="#e6edf3"/>
+  <circle cx="160" cy="162" r="4" fill="#e6edf3"/>
+  <!-- the button, mid-press -->
+  <circle cx="160" cy="120" r="22" fill="#388bfd"/>
+  <circle cx="160" cy="120" r="22" fill="none" stroke="#e6edf3" stroke-width="7"/>
+  <!-- ring waves, the wake -->
+  <g fill="none" stroke="#388bfd" stroke-width="7" stroke-linecap="round">
+    <path d="M228 90 a52 52 0 0 1 0 60"/>
+    <path d="M252 74 a80 80 0 0 1 0 92"/>
+    <path d="M92 90 a52 52 0 0 0 0 60"/>
+    <path d="M68 74 a80 80 0 0 0 0 92"/>
+  </g>
+</svg>

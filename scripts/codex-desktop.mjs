@@ -49,7 +49,7 @@ if (test) {
   }
   const plist = launchdPlist({ job: 'test', label: 'test', signal: '/tmp/a&b', threadId: 't<1', log: '/tmp/test' });
   if (!plist.includes('/tmp/a&amp;b') || !plist.includes('t&lt;1')) fail('launchd plist escaping test failed');
-  console.log('file-doorbell: codex desktop tests passed');
+  console.log('doorbell: codex desktop tests passed');
   process.exit(0);
 }
 
@@ -67,13 +67,13 @@ const transcript = findTranscript(threadId);
 if (!transcript) fail(`transcript not found for ${threadId}`);
 if (installLaunchd) installDesktopLaunchd({ label, signal, threadId });
 
-process.title = `file-doorbell:codex-desktop:${label}`;
+process.title = `doorbell:codex-desktop:${label}`;
 if (process.stdout.isTTY) process.stdout.write(`\u001b]0;file doorbell: codex desktop: ${label}\u0007`);
 
 if (probe) {
   try {
     await sendDesktopRequest();
-    console.log(`file-doorbell: codex desktop IPC socket found for ${threadId}`);
+    console.log(`doorbell: codex desktop IPC socket found for ${threadId}`);
     process.exit(0);
   } catch (error) {
     fail(message(error));
@@ -90,9 +90,9 @@ let transcriptPartial = '';
 let taskActive = readTaskActive(transcript);
 const ringQueue = [];
 
-console.log(`file-doorbell: armed as ${process.title}`);
-console.log(`file-doorbell: watching ${signal}`);
-console.log(`file-doorbell: codex desktop task lifecycle from ${transcript}`);
+console.log(`doorbell: armed as ${process.title}`);
+console.log(`doorbell: watching ${signal}`);
+console.log(`doorbell: codex desktop task lifecycle from ${transcript}`);
 
 fs.watchFile(signal, { interval: 250, persistent: true }, current => {
   if (stopped) return;
@@ -130,7 +130,7 @@ async function wake() {
   waking = true;
 
   const rings = ringQueue.splice(0, MAX_RING_LINES);
-  console.log(`file-doorbell: ${rings.length} line(s) observed, prompting codex desktop task ${threadId}`);
+  console.log(`doorbell: ${rings.length} line(s) observed, prompting codex desktop task ${threadId}`);
   let delivered = false;
   try {
     await sendDesktopRequest(
@@ -138,11 +138,11 @@ async function wake() {
       startTurnParams(threadId, randomUUID(), formatDoorbellPrompt(rings)),
       START_TURN_VERSION,
     );
-    console.log('file-doorbell: codex desktop turn accepted');
+    console.log('doorbell: codex desktop turn accepted');
     delivered = true;
   } catch (error) {
     ringQueue.unshift(...rings);
-    console.error(`file-doorbell: codex desktop wake failed: ${message(error)}`);
+    console.error(`doorbell: codex desktop wake failed: ${message(error)}`);
   } finally {
     waking = false;
   }
@@ -172,7 +172,7 @@ function readRingLines(currentSize) {
     file = fs.openSync(signal, 'r');
     fs.readSync(file, buffer, 0, length, start);
   } catch (error) {
-    console.error(`file-doorbell: line read failed: ${message(error)}`);
+    console.error(`doorbell: line read failed: ${message(error)}`);
     return [];
   } finally {
     if (file !== undefined) fs.closeSync(file);
@@ -199,7 +199,7 @@ function readTranscriptLifecycle(currentSize) {
     file = fs.openSync(transcript, 'r');
     fs.readSync(file, buffer, 0, length, transcriptOffset);
   } catch (error) {
-    console.error(`file-doorbell: codex desktop transcript read failed: ${message(error)}`);
+    console.error(`doorbell: codex desktop transcript read failed: ${message(error)}`);
     return undefined;
   } finally {
     if (file !== undefined) fs.closeSync(file);
@@ -316,8 +316,8 @@ function installDesktopLaunchd({ label, signal, threadId }) {
   const bootout = spawnSync('launchctl', ['bootout', domain, plist], { stdio: 'ignore' });
   if (bootout.status === 0) spawnSync('/bin/sleep', ['0.2']);
   runCommand('launchctl', ['bootstrap', domain, plist]);
-  console.log(`file-doorbell: installed ${job}`);
-  console.log(`file-doorbell: launchd log ${log}`);
+  console.log(`doorbell: installed ${job}`);
+  console.log(`doorbell: launchd log ${log}`);
   process.exit(0);
 }
 
@@ -328,7 +328,7 @@ function uninstallDesktopLaunchd(label) {
   const domain = `gui/${process.getuid()}`;
   spawnSync('launchctl', ['bootout', `${domain}/${job}`], { stdio: 'ignore' });
   fs.rmSync(plist, { force: true });
-  console.log(`file-doorbell: uninstalled ${job}`);
+  console.log(`doorbell: uninstalled ${job}`);
   process.exit(0);
 }
 
@@ -463,7 +463,7 @@ async function sendDesktopRequest(method, params, version = 1) {
       socket.once('connect', resolve);
       socket.once('error', reject);
     });
-    const initialized = await request('initialize', { clientType: 'file-doorbell' }, 0, 5_000);
+    const initialized = await request('initialize', { clientType: 'doorbell' }, 0, 5_000);
     assertSuccess(initialized);
     if (!method) return initialized.result;
     const response = await request(method, params, version, 60_000);
@@ -483,6 +483,6 @@ function message(error) {
 }
 
 function fail(text) {
-  console.error(`file-doorbell: ${text}`);
+  console.error(`doorbell: ${text}`);
   process.exit(1);
 }

@@ -1,0 +1,4 @@
+interface:
+  display_name: "File Doorbell"
+  short_description: "Wake a local agent task from a signal file"
+  default_prompt: "Use $file-doorbell to arm this task against a local signal file."

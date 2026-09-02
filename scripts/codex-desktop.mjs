@@ -39,6 +39,12 @@ if (test) {
     || 'turnStartParams' in start) fail('start-turn v2 payload test failed');
   if (desktopThreadUrl('thread 1') !== 'codex://threads/thread%201') fail('desktop thread URL test failed');
   if (!shouldRequestDesktopReattach(new Error('no-client-found'), 30_001, 0, 'darwin')
+    || !shouldRequestDesktopReattach(
+      Object.assign(new Error('connect refused'), { code: 'ECONNREFUSED' }),
+      30_001,
+      0,
+      'darwin',
+    )
     || shouldRequestDesktopReattach(new Error('no-client-found'), 30_000, 0, 'darwin')
     || shouldRequestDesktopReattach(new Error('other'), 30_001, 0, 'darwin')
     || shouldRequestDesktopReattach(new Error('no-client-found'), 30_001, 0, 'linux')) {
@@ -327,8 +333,11 @@ function desktopThreadUrl(conversationId) {
 }
 
 function shouldRequestDesktopReattach(error, now, lastAt, platform = process.platform) {
+  const unavailable = message(error) === 'no-client-found'
+    || ['ECONNREFUSED', 'ECONNRESET', 'ENOENT'].includes(error?.code)
+    || message(error) === 'desktop IPC connection closed';
   return platform === 'darwin'
-    && message(error) === 'no-client-found'
+    && unavailable
     && now - lastAt > REATTACH_COOLDOWN_MS;
 }
 
@@ -482,6 +491,7 @@ async function sendDesktopRequest(method, params, version = 1) {
     socket.once('error', reject);
     socket.once('close', () => reject(new Error('desktop IPC connection closed')));
   });
+  closed.catch(() => {});
 
   const request = (requestMethod, requestParams, version, timeoutMs) => {
     const requestId = randomUUID();

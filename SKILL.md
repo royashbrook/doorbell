@@ -56,8 +56,8 @@ profile changes.
 4. Let the task become idle, append a unique line, and count success only when that exact line
    starts a visible agent turn. Perform this proof yourself.
 5. Re-arm after the owning task or CLI restarts. A durable Codex desktop launchd watcher survives
-   app restarts and background-reattaches a persisted task when Desktop's owner registry is cold.
-   Reinstall it when the task id changes.
+   app restarts and background-reattaches a persisted task when Desktop or its owner registry is
+   unavailable. Reinstall it when the task id changes.
 
 ## Supervisor-owned Claude Code
 

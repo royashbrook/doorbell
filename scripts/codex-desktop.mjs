@@ -165,7 +165,7 @@ async function wake() {
       lastReattachAt = now;
       try {
         requestDesktopReattach(threadId);
-        console.log(`doorbell: requested background reattach for codex desktop task ${threadId}`);
+        console.log(`doorbell: requested desktop reattach for codex desktop task ${threadId}`);
       } catch (reattachError) {
         console.error(`doorbell: codex desktop reattach failed: ${message(reattachError)}`);
       }

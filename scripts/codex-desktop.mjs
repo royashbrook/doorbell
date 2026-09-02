@@ -18,6 +18,7 @@ const MAX_RING_BYTES = 16 * 1024;
 const MAX_RING_LINES = 8;
 const MAX_RING_LINE_LENGTH = 2_048;
 const ERROR_RETRY_MS = 5_000;
+const REATTACH_COOLDOWN_MS = 30_000;
 const TRANSCRIPT_SCAN_CHUNK_BYTES = 1024 * 1024;
 const START_TURN_VERSION = 2;
 
@@ -36,6 +37,13 @@ if (test) {
     || start.turnStart.request.clientUserMessageId !== 'message-1'
     || start.turnStart.request.input?.[0]?.text !== 'hello'
     || 'turnStartParams' in start) fail('start-turn v2 payload test failed');
+  if (desktopThreadUrl('thread 1') !== 'codex://threads/thread%201') fail('desktop thread URL test failed');
+  if (!shouldRequestDesktopReattach(new Error('no-client-found'), 30_001, 0, 'darwin')
+    || shouldRequestDesktopReattach(new Error('no-client-found'), 30_000, 0, 'darwin')
+    || shouldRequestDesktopReattach(new Error('other'), 30_001, 0, 'darwin')
+    || shouldRequestDesktopReattach(new Error('no-client-found'), 30_001, 0, 'linux')) {
+    fail('desktop reattach decision test failed');
+  }
   const lifecycle = lifecycleState([
     '{"type":"event_msg","payload":{"type":"task_started"}}',
     '{"type":"event_msg","payload":{"type":"task_complete"}}',
@@ -85,6 +93,7 @@ if (probe) {
 let waking = false;
 let wakeScheduled = false;
 let stopped = false;
+let lastReattachAt = Number.NEGATIVE_INFINITY;
 let readOffset = fs.statSync(signal).size;
 let partialLine = '';
 let transcriptOffset = fs.statSync(transcript).size;
@@ -145,6 +154,16 @@ async function wake() {
   } catch (error) {
     ringQueue.unshift(...rings);
     console.error(`doorbell: codex desktop wake failed: ${message(error)}`);
+    const now = Date.now();
+    if (shouldRequestDesktopReattach(error, now, lastReattachAt)) {
+      lastReattachAt = now;
+      try {
+        requestDesktopReattach(threadId);
+        console.log(`doorbell: requested background reattach for codex desktop task ${threadId}`);
+      } catch (reattachError) {
+        console.error(`doorbell: codex desktop reattach failed: ${message(reattachError)}`);
+      }
+    }
   } finally {
     waking = false;
   }
@@ -301,6 +320,27 @@ function startTurnParams(conversationId, clientUserMessageId, text) {
       },
     },
   };
+}
+
+function desktopThreadUrl(conversationId) {
+  return `codex://threads/${encodeURIComponent(conversationId)}`;
+}
+
+function shouldRequestDesktopReattach(error, now, lastAt, platform = process.platform) {
+  return platform === 'darwin'
+    && message(error) === 'no-client-found'
+    && now - lastAt > REATTACH_COOLDOWN_MS;
+}
+
+function requestDesktopReattach(conversationId) {
+  const result = spawnSync('/usr/bin/open', ['-g', desktopThreadUrl(conversationId)], {
+    encoding: 'utf8',
+    timeout: 5_000,
+  });
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    throw new Error((result.stderr || result.stdout || 'open failed').trim());
+  }
 }
 
 function installDesktopLaunchd({ label, signal, threadId }) {

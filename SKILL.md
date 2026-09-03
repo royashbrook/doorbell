@@ -5,6 +5,9 @@ description: Wake an idle local coding-agent task through a proven host adapter.
 
 # Doorbell
 
+`db` and `ring` are optional explicit aliases installed by `scripts/install-aliases.mjs`. They are
+thin forwarders to this file, never independent copies of the instructions.
+
 A doorbell has two independent parts: a transport that carries a ring and a host adapter that turns
 it into a visible agent turn. File-backed, newline-delimited signaling is the portable default. Do
 not count a live watcher, task, PID, or successful injection call as a working doorbell.

@@ -14,6 +14,7 @@ const probe = argv.includes('--probe');
 const test = argv.includes('--test');
 const installLaunchd = argv.includes('--install-launchd');
 const uninstallLaunchd = argv.includes('--uninstall-launchd');
+const ringAuth = path.join(path.dirname(fileURLToPath(import.meta.url)), 'ring-auth.mjs');
 const MAX_RING_BYTES = 16 * 1024;
 const MAX_RING_LINES = 8;
 const MAX_RING_LINE_LENGTH = 2_048;
@@ -63,8 +64,11 @@ if (test) {
   } finally {
     fs.rmSync(testDir, { recursive: true, force: true });
   }
-  const plist = launchdPlist({ job: 'test', label: 'test', signal: '/tmp/a&b', threadId: 't<1', log: '/tmp/test' });
+  const plist = launchdPlist({ job: 'test', label: 'test', signal: '/tmp/a&b', threadId: 't<1', log: '/tmp/test', allowedSigners: '/tmp/a&b.signers', authNamespace: 'test' });
   if (!plist.includes('/tmp/a&amp;b') || !plist.includes('t&lt;1')) fail('launchd plist escaping test failed');
+  if (!plist.includes('--allowed-signers') || !plist.includes('/tmp/a&amp;b.signers')
+    || !plist.includes('--auth-namespace') || !plist.includes('<string>test</string>')) fail('launchd auth config test failed');
+  runCommand(process.execPath, [ringAuth, '--test']);
   console.log('doorbell: codex desktop tests passed');
   process.exit(0);
 }
@@ -73,15 +77,20 @@ const threadId = process.env.CODEX_THREAD_ID || '';
 const signalArg = option('--signal') || process.env.CODEX_DOORBELL_SIGNAL || '';
 const label = option('--label') || process.env.CODEX_DOORBELL_LABEL || 'file';
 const signal = path.resolve(signalArg);
+const allowedSignersArg = option('--allowed-signers') || process.env.CODEX_DOORBELL_ALLOWED_SIGNERS || '';
+const allowedSigners = allowedSignersArg ? path.resolve(allowedSignersArg) : '';
+const authNamespace = option('--auth-namespace') || process.env.CODEX_DOORBELL_AUTH_NAMESPACE || 'doorbell';
 
 if (!/^[a-zA-Z0-9._-]+$/.test(label)) fail(`invalid label: ${label}`);
 if (uninstallLaunchd) uninstallDesktopLaunchd(label);
 if (!threadId) fail('CODEX_THREAD_ID is not set');
 if (!signalArg) fail('--signal <path> is required');
 if (!fs.existsSync(signal) || !fs.statSync(signal).isFile()) fail(`signal file does not exist: ${signal}`);
+if (allowedSigners && (!fs.existsSync(allowedSigners) || !fs.statSync(allowedSigners).isFile())) fail(`allowed signers file does not exist: ${allowedSigners}`);
+if (!/^[a-zA-Z0-9._-]+$/.test(authNamespace)) fail(`invalid auth namespace: ${authNamespace}`);
 const transcript = findTranscript(threadId);
 if (!transcript) fail(`transcript not found for ${threadId}`);
-if (installLaunchd) installDesktopLaunchd({ label, signal, threadId });
+if (installLaunchd) installDesktopLaunchd({ label, signal, threadId, allowedSigners, authNamespace });
 
 process.title = `doorbell:codex-desktop:${label}`;
 if (process.stdout.isTTY) process.stdout.write(`\u001b]0;doorbell: codex desktop: ${label}\u0007`);
@@ -110,6 +119,7 @@ const ringQueue = [];
 console.log(`doorbell: armed as ${process.title}`);
 console.log(`doorbell: watching ${signal}`);
 console.log(`doorbell: codex desktop task lifecycle from ${transcript}`);
+if (allowedSigners) console.log(`doorbell: requiring signatures from ${allowedSigners} in namespace ${authNamespace}`);
 
 fs.watchFile(signal, { interval: 250, persistent: true }, current => {
   if (stopped) return;
@@ -150,9 +160,10 @@ async function wake() {
   console.log(`doorbell: ${rings.length} line(s) observed, prompting codex desktop task ${threadId}`);
   let delivered = false;
   try {
+    const presented = presentRingLines(rings);
     await sendDesktopRequest(
       'thread-follower-start-turn',
-      startTurnParams(threadId, randomUUID(), formatDoorbellPrompt(rings)),
+      startTurnParams(threadId, randomUUID(), formatDoorbellPrompt(presented)),
       START_TURN_VERSION,
     );
     console.log('doorbell: codex desktop turn accepted');
@@ -186,6 +197,26 @@ function scheduleWake(delayMs) {
   if (stopped || waking || wakeScheduled || ringQueue.length === 0) return;
   wakeScheduled = true;
   setTimeout(() => void wake(), delayMs);
+}
+
+function presentRingLines(lines) {
+  if (!allowedSigners) return lines;
+  return lines.map(line => {
+    const result = spawnSync(process.execPath, [
+      ringAuth, 'present', '--allowed-signers', allowedSigners, '--signal', signal,
+      '--namespace', authNamespace, '--require-signature',
+    ], {
+      input: line,
+      encoding: 'utf8',
+      timeout: 6_000,
+      maxBuffer: 64 * 1024,
+    });
+    if (result.error) throw new Error(`ring authentication failed: ${result.error.message}`);
+    if (result.status !== 0) throw new Error(`ring authentication failed: ${(result.stderr || 'presenter failed').trim()}`);
+    const shown = result.stdout.trim();
+    if (!shown) throw new Error('ring authentication failed: presenter returned no output');
+    return shown;
+  });
 }
 
 function readRingLines(currentSize) {
@@ -352,7 +383,7 @@ function requestDesktopReattach(conversationId) {
   }
 }
 
-function installDesktopLaunchd({ label, signal, threadId }) {
+function installDesktopLaunchd({ label, signal, threadId, allowedSigners, authNamespace }) {
   if (process.platform !== 'darwin') fail('--install-launchd requires macOS');
   const job = launchdJob(label);
   const legacyJob = legacyLaunchdJob(label);
@@ -362,7 +393,7 @@ function installDesktopLaunchd({ label, signal, threadId }) {
   const log = path.join(logDir, `${job}.log`);
   fs.mkdirSync(agentsDir, { recursive: true });
   fs.mkdirSync(logDir, { recursive: true });
-  fs.writeFileSync(plist, launchdPlist({ job, label, signal, threadId, log }), { mode: 0o600 });
+  fs.writeFileSync(plist, launchdPlist({ job, label, signal, threadId, log, allowedSigners, authNamespace }), { mode: 0o600 });
   runCommand('/usr/bin/plutil', ['-lint', plist]);
   const domain = `gui/${process.getuid()}`;
   const bootout = spawnSync('launchctl', ['bootout', domain, plist], { stdio: 'ignore' });
@@ -395,10 +426,13 @@ function legacyLaunchdJob(label) {
   return `com.openai.file-doorbell.${label}`;
 }
 
-function launchdPlist({ job, label, signal, threadId, log }) {
+function launchdPlist({ job, label, signal, threadId, log, allowedSigners = '', authNamespace = 'doorbell' }) {
   const adapter = fileURLToPath(import.meta.url);
   const value = text => escapeXml(text);
   const node = executableOnPath('node') || process.execPath;
+  const authArgs = allowedSigners
+    ? `\n    <string>--allowed-signers</string><string>${value(allowedSigners)}</string>\n    <string>--auth-namespace</string><string>${value(authNamespace)}</string>`
+    : '';
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -409,7 +443,7 @@ function launchdPlist({ job, label, signal, threadId, log }) {
     <string>${value(node)}</string>
     <string>${value(adapter)}</string>
     <string>--signal</string><string>${value(signal)}</string>
-    <string>--label</string><string>${value(label)}</string>
+    <string>--label</string><string>${value(label)}</string>${authArgs}
   </array>
   <key>EnvironmentVariables</key>
   <dict><key>CODEX_THREAD_ID</key><string>${value(threadId)}</string></dict>

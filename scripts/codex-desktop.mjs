@@ -18,7 +18,7 @@ const MAX_RING_BYTES = 16 * 1024;
 const MAX_RING_LINES = 8;
 const MAX_RING_LINE_LENGTH = 2_048;
 const ERROR_RETRY_MS = 5_000;
-const REATTACH_COOLDOWN_MS = 30_000;
+const MAX_RETRY_MS = 60_000;
 const TRANSCRIPT_SCAN_CHUNK_BYTES = 1024 * 1024;
 const START_TURN_VERSION = 2;
 
@@ -37,19 +37,6 @@ if (test) {
     || start.turnStart.request.clientUserMessageId !== 'message-1'
     || start.turnStart.request.input?.[0]?.text !== 'hello'
     || 'turnStartParams' in start) fail('start-turn v2 payload test failed');
-  if (desktopThreadUrl('thread 1') !== 'codex://threads/thread%201') fail('desktop thread URL test failed');
-  if (!shouldRequestDesktopReattach(new Error('no-client-found'), 30_001, 0, 'darwin')
-    || !shouldRequestDesktopReattach(
-      Object.assign(new Error('connect refused'), { code: 'ECONNREFUSED' }),
-      30_001,
-      0,
-      'darwin',
-    )
-    || shouldRequestDesktopReattach(new Error('no-client-found'), 30_000, 0, 'darwin')
-    || shouldRequestDesktopReattach(new Error('other'), 30_001, 0, 'darwin')
-    || shouldRequestDesktopReattach(new Error('no-client-found'), 30_001, 0, 'linux')) {
-    fail('desktop reattach decision test failed');
-  }
   const lifecycle = lifecycleState([
     '{"type":"event_msg","payload":{"type":"task_started"}}',
     '{"type":"event_msg","payload":{"type":"task_complete"}}',
@@ -99,13 +86,14 @@ if (probe) {
 let waking = false;
 let wakeScheduled = false;
 let stopped = false;
-let lastReattachAt = Number.NEGATIVE_INFINITY;
+let retryMs = ERROR_RETRY_MS;
 let readOffset = fs.statSync(signal).size;
 let partialLine = '';
 let transcriptOffset = fs.statSync(transcript).size;
 let transcriptPartial = '';
 let taskActive = readTaskActive(transcript);
 const ringQueue = [];
+let pending = [];
 
 console.log(`doorbell: armed as ${process.title}`);
 console.log(`doorbell: watching ${signal}`);
@@ -135,7 +123,7 @@ fs.watchFile(transcript, { interval: 100, persistent: true }, current => {
   const state = readTranscriptLifecycle(current.size);
   if (state === undefined) return;
   taskActive = state;
-  if (!taskActive && ringQueue.length > 0) scheduleWake(100);
+  if (!taskActive) scheduleWake(100);
 });
 
 process.on('SIGINT', stop);
@@ -143,38 +131,30 @@ process.on('SIGTERM', stop);
 
 async function wake() {
   wakeScheduled = false;
-  if (stopped || waking || taskActive || ringQueue.length === 0) return;
+  if (stopped || waking || taskActive) return;
+  if (!pending.length) pending = ringQueue.splice(0, MAX_RING_LINES);
+  if (!pending.length) return;
   waking = true;
 
-  const rings = ringQueue.splice(0, MAX_RING_LINES);
-  console.log(`doorbell: ${rings.length} line(s) observed, prompting codex desktop task ${threadId}`);
+  console.log(`doorbell: ${pending.length} line(s) observed, prompting codex desktop task ${threadId}`);
   let delivered = false;
   try {
     await sendDesktopRequest(
       'thread-follower-start-turn',
-      startTurnParams(threadId, randomUUID(), formatDoorbellPrompt(rings)),
+      startTurnParams(threadId, randomUUID(), formatDoorbellPrompt(pending)),
       START_TURN_VERSION,
     );
     console.log('doorbell: codex desktop turn accepted');
     delivered = true;
+    pending = [];
   } catch (error) {
-    ringQueue.unshift(...rings);
     console.error(`doorbell: codex desktop wake failed: ${message(error)}`);
-    const now = Date.now();
-    if (shouldRequestDesktopReattach(error, now, lastReattachAt)) {
-      lastReattachAt = now;
-      try {
-        requestDesktopReattach(threadId);
-        console.log(`doorbell: requested desktop reattach for codex desktop task ${threadId}`);
-      } catch (reattachError) {
-        console.error(`doorbell: codex desktop reattach failed: ${message(reattachError)}`);
-      }
-    }
   } finally {
     waking = false;
   }
   if (once && delivered) return stop();
-  if (ringQueue.length > 0 && !taskActive) scheduleWake(delivered ? 1_000 : ERROR_RETRY_MS);
+  if (!taskActive) scheduleWake(delivered ? 1_000 : retryMs);
+  retryMs = delivered ? ERROR_RETRY_MS : Math.min(2 * retryMs, MAX_RETRY_MS);
 }
 
 function option(name) {
@@ -183,7 +163,7 @@ function option(name) {
 }
 
 function scheduleWake(delayMs) {
-  if (stopped || waking || wakeScheduled || ringQueue.length === 0) return;
+  if (stopped || waking || wakeScheduled || (!pending.length && !ringQueue.length)) return;
   wakeScheduled = true;
   setTimeout(() => void wake(), delayMs);
 }
@@ -326,30 +306,6 @@ function startTurnParams(conversationId, clientUserMessageId, text) {
       },
     },
   };
-}
-
-function desktopThreadUrl(conversationId) {
-  return `codex://threads/${encodeURIComponent(conversationId)}`;
-}
-
-function shouldRequestDesktopReattach(error, now, lastAt, platform = process.platform) {
-  const unavailable = message(error) === 'no-client-found'
-    || ['ECONNREFUSED', 'ECONNRESET', 'ENOENT'].includes(error?.code)
-    || message(error) === 'desktop IPC connection closed';
-  return platform === 'darwin'
-    && unavailable
-    && now - lastAt > REATTACH_COOLDOWN_MS;
-}
-
-function requestDesktopReattach(conversationId) {
-  const result = spawnSync('/usr/bin/open', ['-g', desktopThreadUrl(conversationId)], {
-    encoding: 'utf8',
-    timeout: 5_000,
-  });
-  if (result.error) throw result.error;
-  if (result.status !== 0) {
-    throw new Error((result.stderr || result.stdout || 'open failed').trim());
-  }
 }
 
 function installDesktopLaunchd({ label, signal, threadId }) {

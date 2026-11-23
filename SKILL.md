@@ -56,8 +56,8 @@ profile changes.
 4. Let the task become idle, append a unique line, and count success only when that exact line
    starts a visible agent turn. Perform this proof yourself.
 5. Re-arm after the owning task or CLI restarts. A durable Codex desktop launchd watcher survives
-   app restarts and reattaches a persisted task when Desktop or its owner registry is unavailable.
-   Current Desktop builds bring Codex to the foreground while handling that reattach deep link.
+   app restarts. If the socket or task owner is unavailable, it retries IPC without opening
+   Desktop. A watcher restart starts at EOF, not at the last undelivered ring.
    Reinstall the watcher when the task id changes.
 
 ## Supervisor-owned Claude Code
@@ -119,7 +119,10 @@ node <skill-dir>/scripts/codex-desktop.mjs --label <label> --uninstall-launchd
 ```
 
 Run install/uninstall elevated because they write `~/Library/LaunchAgents` and call `launchctl`.
-The installed watcher restarts automatically and keeps rings queued while Codex desktop is down.
+While running, the watcher keeps a bounded in-memory queue and backs off from 5 to 60 seconds
+between failures. Never use a deep link as an automatic fallback. If this Desktop build has no
+compatible listener, unattended wake is unavailable. Before enabling other jobs, prove one
+after-idle ring opens its turn while another app keeps focus.
 Installation replaces the same label's legacy `com.openai.file-doorbell.*` job; uninstall removes
 both names during the compatibility window.
 During first setup, prefer a least-privilege Codex permission profile for the exact external paths

@@ -19,9 +19,8 @@ A cross-substrate coding-agent skill that turns local rings into visible agent t
 - File-backed signaling is the portable default transport.
 - Supervisor-managed Claude Code sessions reuse their existing PTY injection adapter.
 - Standalone Claude Code uses its persistent `Monitor` tool.
-- Codex desktop uses the included Node adapter and local desktop IPC. On macOS, its durable
-  launchd owner launches or reattaches a persisted task after Desktop restarts. Current Desktop
-  builds bring Codex to the foreground while handling that reattach deep link.
+- Codex desktop uses local desktop IPC. If the socket or task owner is unavailable,
+  the watcher retries in the background. It never opens the app or switches chats.
 - Grok can use its native persistent monitor.
 - Codex CLI and agy are documented as unsupported until their hosts expose a proven live-turn adapter.
 
